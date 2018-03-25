@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
+import time
 
 INPUT_NODE = 784
 OUTPUT_NODE = 10
@@ -32,14 +33,12 @@ def train(mnist):
     weights2 = tf.Variable(tf.truncated_normal([LAYER1_NODE, OUTPUT_NODE], stddev=0.1))
     biases2 = tf.Variable(tf.constant(0.1, shape=[OUTPUT_NODE]))
 
+    global_step = tf.Variable(0, trainable=False)
+
+    # used for gradient descent
     y = inference(x, None, weights1, biases1, weights2, biases2)
 
-    global_step = tf.Variable(0, trainable=False)
-    variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
-    variables_averages_op = variable_averages.apply(tf.trainable_variables())
-    average_y = inference(x, variable_averages, weights1, biases1, weights2, biases2)
-
-    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=average_y, labels=tf.argmax(y_, 1))
+    cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=tf.argmax(y_, 1))
     cross_entropy_mean = tf.reduce_mean(cross_entropy)
 
     regularizer = tf.contrib.layers.l2_regularizer(REGULARIZATION_RATE)
@@ -54,11 +53,17 @@ def train(mnist):
         staircase=True)
     train_step = tf.train.GradientDescentOptimizer(learning_rate).minimize(loss, global_step=global_step)
 
-    # train_op = tf.group(train_step, variables_averages_op)
+    variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
+    variables_averages_op = variable_averages.apply(tf.trainable_variables())
+    # used for prediction
+    average_y = inference(x, variable_averages, weights1, biases1, weights2, biases2)
+
     with tf.control_dependencies([train_step, variables_averages_op]):
+    # with tf.control_dependencies([train_step]):
         train_op = tf.no_op(name='train')
 
     correct_prediction = tf.equal(tf.argmax(average_y, 1), tf.argmax(y_, 1))
+    # correct_prediction = tf.equal(tf.argmax(y, 1), tf.argmax(y_, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, tf.float32))
 
     with tf.Session() as sess:
@@ -81,7 +86,10 @@ def train(mnist):
 
 def main(argv=None):
     mnist = input_data.read_data_sets("~/temp/data", one_hot=True)
+    t0 = time.time()
     train(mnist)
+    t1 = time.time()
+    print("Elapsed %g seconds" % (t1-t0))
 
 if __name__ == '__main__':
     tf.app.run()
