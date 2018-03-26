@@ -14,32 +14,29 @@ REGULARIZATION_RATE = 0.0001
 TRAINING_STEPS = 30000
 MOVING_AVERAGE_DECAY = 0.99
 
-def inference(input_tensor, avg_class, reuse=False):
-    with tf.variable_scope('layer1', reuse=reuse):
-        weights = tf.get_variable("weights", [INPUT_NODE, LAYER1_NODE], initalizer=tf.truncated_normal_initializer(stddev=0.1))
-        biases = tf.get_variable("biases", [LAYER1_NODE], initalizer=tf.constant_initializer(0.0))
-        if avg_class == None:
-            layer1 = tf.nn.relu(tf.matmul(input_tensor, weights) + biases)
-        else:
-            layer1 = tf.nn.relu(tf.matmul(input_tensor, avg_class.average(weights)) + avg_class.average(biases))
-    with tf.variable_scope('layer2', reuse=reuse):
-        weights = tf.get_variable("weights", [LAYER1_NODE, OUTPUT_NODE], initalizer=tf.truncated_normal_initializer(stddev=0.1))
-        biases = tf.get_variable("biases", [OUTPUT_NODE], initalizer=tf.constant_initializer(0.0))
-        if avg_class == None:
-            layer2 = tf.matmul(layer1, weights) + biases
-        else:
-            layer2 = tf.matmul(layer1, avg_class.average(weights)) + avg_class.average(biases)
-    return layer2
+def inference(input_tensor, avg_class, weights1, biases1, weights2, biases2):
+    if avg_class == None:
+        layer1 = tf.nn.relu(tf.matmul(input_tensor, weights1) + biases1)
+        return tf.matmul(layer1, weights2) + biases2
+    else:
+        layer1 = tf.nn.relu(tf.matmul(input_tensor, avg_class.average(weights1)) + avg_class.average(biases1))
+        return tf.matmul(layer1, avg_class.average(weights2)) + avg_class.average(biases2)
 
 def train(mnist):
 
     x = tf.placeholder(tf.float32, [None, INPUT_NODE], name='x-input')
     y_ = tf.placeholder(tf.float32, [None, OUTPUT_NODE], name='y-input')
 
+    weights1 = tf.Variable(tf.truncated_normal([INPUT_NODE, LAYER1_NODE], stddev=0.1))
+    biases1 = tf.Variable(tf.constant(0.1, shape=[LAYER1_NODE]))
+
+    weights2 = tf.Variable(tf.truncated_normal([LAYER1_NODE, OUTPUT_NODE], stddev=0.1))
+    biases2 = tf.Variable(tf.constant(0.1, shape=[OUTPUT_NODE]))
+
     global_step = tf.Variable(0, trainable=False)
 
     # used for gradient descent
-    y = inference(x, None, True) 
+    y = inference(x, None, weights1, biases1, weights2, biases2)
 
     cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=tf.argmax(y_, 1))
     cross_entropy_mean = tf.reduce_mean(cross_entropy)
@@ -59,7 +56,7 @@ def train(mnist):
     variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
     variables_averages_op = variable_averages.apply(tf.trainable_variables())
     # used for prediction
-    average_y = inference(x, variable_averages, True)
+    average_y = inference(x, variable_averages, weights1, biases1, weights2, biases2)
 
     with tf.control_dependencies([train_step, variables_averages_op]):
     # with tf.control_dependencies([train_step]):
