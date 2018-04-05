@@ -11,7 +11,7 @@ LEARNING_RATE_DECAY = 0.99
 REGULARIZATION_RATE = 0.0001
 TRAINING_STEPS = 1000
 MOVING_AVERAGE_DECAY = 0.99
-N_GPU = 2
+N_GPU = 1
 
 MODEL_SAVE_PATH = "/home/xyang/temp/logs_and_models"
 MODEL_NAME = "model.ckpt"
@@ -42,10 +42,10 @@ def get_input():
         capacity = capacity,
         min_after_dequeue=min_after_dequeue)
 
-def get_loss(x, y_, regularizer, scope):
-    y = mnist_inference.inference(x, regularizer)
-    cross_entropy = tf.reduce_mean(
-        tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=y_))
+def get_loss(x, y_, regularizer, scope, reuse_variables=None):
+    with tf.variable_scope(tf.get_variable_scope(), reuse=reuse_variables):
+        y = mnist_inference.inference(x, regularizer)
+    cross_entropy = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=y, labels=y_))
     regularization_loss = tf.add_n(tf.get_collection('losses', scope))
     loss = cross_entropy + regularization_loss
     return loss
@@ -57,7 +57,7 @@ def average_gradients(tower_grads):
         for g, _ in grad_and_vars:
             expanded_g = tf.expand_dims(g, 0)
             grads.append(expanded_g)
-        grad = tf.concat(0, grads)
+        grad = tf.concat(grads, 0)
         grad = tf.reduce_mean(grad, 0)
 
         v = grad_and_vars[0][1]
@@ -76,30 +76,31 @@ def main(argv=None):
         opt = tf.train.GradientDescentOptimizer(learning_rate)
 
         tower_grads = []
+        reuse_variables = False
         for i in range(N_GPU):
             with tf.device('/gpu:%d' % i):
                 with tf.name_scope('GPU_%d' % i) as scope:
-                    cur_loss = get_loss(x, y_, regularizer, scope)
-                    tf.get_variable_scope().reuse_variables()
+                    cur_loss = get_loss(x, y_, regularizer, scope, reuse_variables)
+                    reuse_variables = True
                     grads = opt.compute_gradients(cur_loss)
                     tower_grads.append(grads)
 
         grads = average_gradients(tower_grads)
         for grad, var in grads:
             if grad is not None:
-                tf.histogram.summary('gradients_on_average/%s' % var.op.name, grad)
+                tf.summary.histogram('gradients_on_average/%s' % var.op.name, grad)
 
         apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
         for var in tf.trainable_variables():
-            tf.histogram.summary(var.op.name, var)
+            tf.summary.histogram(var.op.name, var)
 
-        variable_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
-        variable_averages_op = variable_averages.apply(tf.trainable_variables())
+        variables_averages = tf.train.ExponentialMovingAverage(MOVING_AVERAGE_DECAY, global_step)
+        variables_averages_op = variables_averages.apply(tf.trainable_variables())
 
         train_op = tf.group(apply_gradient_op, variables_averages_op)
 
         saver = tf.train.Saver(tf.all_variables())
-        summary_op = tf.merge_all_summaries()
+        summary_op = tf.summary.merge_all()
 
         init = tf.global_variables_initializer()
 
