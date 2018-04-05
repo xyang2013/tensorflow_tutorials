@@ -108,7 +108,7 @@ def main(argv=None):
             init.run()
             coord = tf.train.Coordinator()
             threads = tf.train.start_queue_runners(sess=sess, coord=coord)
-            summary_writer = tf.train.SummaryWriter(MODEL_SAVE_PATH, sess.graph)
+            summary_writer = tf.summary.FileWriter(MODEL_SAVE_PATH, sess.graph)
 
             for step in range(TRAINING_STEPS):
                 start_time = time.time()
